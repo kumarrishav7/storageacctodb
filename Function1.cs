@@ -33,6 +33,7 @@ namespace BlobStorageToDB
             var blobClient = containerClient.GetBlobClient(name);
 
             _logger.LogInformation("Blob URI: {BlobUri}", blobClient.Uri);
+            _logger.LogError("Blob URI: {BlobUri}", blobClient.Uri);
         }
     }
 }
