@@ -26,31 +26,42 @@ namespace BlobStorageToDB
             [BlobTrigger("rawcontracts/{name}", Connection = "AzureWebJobsStorage")] Stream stream,
             string name)
         {
-            using var reader = new StreamReader(stream);
-            var content = await reader.ReadToEndAsync();
-
-            _logger.LogInformation("Blob trigger function processed blob");
-            _logger.LogInformation("Blob Name: {BlobName}", name);
-
-            var containerClient = _blobServiceClient.GetBlobContainerClient("rawcontracts");
-            var blobClient = containerClient.GetBlobClient(name);
-
-            var properties = await blobClient.GetPropertiesAsync();
-            _logger.LogInformation("Blob Size: {Size} bytes", properties.Value.ContentLength);
-            _logger.LogInformation("Blob URI: {BlobUri}", blobClient.Uri);
-
-            // --- Send a message to Service Bus ---
-            var sender = _serviceBusClient.CreateSender("messageFromFile");
-
-            var message = new ServiceBusMessage(new BinaryData(new
+            if (string.IsNullOrWhiteSpace(name))
             {
-                FileName = name,
-                Uri = blobClient.Uri.ToString(),
-                Size = properties.Value.ContentLength
-            }));
+                _logger.LogWarning("Blob name is null or empty.");
+                return;
+            }
 
-            await sender.SendMessageAsync(message);
-            _logger.LogInformation("Message sent to Service Bus for blob {BlobName}", name);
+            try
+            {
+                using var reader = new StreamReader(stream);
+                var content = await reader.ReadToEndAsync();
+
+                var containerClient = _blobServiceClient.GetBlobContainerClient("rawcontracts");
+                var blobClient = containerClient.GetBlobClient(name);
+
+                var properties = await blobClient.GetPropertiesAsync();
+
+                _logger.LogInformation(
+                    "Processed blob {BlobName}: Size={Size} bytes, URI={BlobUri}",
+                    name, properties.Value.ContentLength, blobClient.Uri);
+
+                await using var sender = _serviceBusClient.CreateSender("messageFromFile");
+                var message = new ServiceBusMessage(new BinaryData(new
+                {
+                    FileName = name,
+                    Uri = blobClient.Uri.ToString(),
+                    Size = properties.Value.ContentLength
+                }));
+
+                await sender.SendMessageAsync(message);
+                _logger.LogInformation("Message sent to Service Bus for blob {BlobName}", name);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing blob {BlobName}", name);
+                throw;
+            }
         }
     }
 }
